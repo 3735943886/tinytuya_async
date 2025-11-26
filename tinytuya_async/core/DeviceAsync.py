@@ -17,7 +17,7 @@ from tinytuya.core.error_helper import ERR_CONNECT, ERR_DEVTYPE, ERR_JSON, ERR_K
 from tinytuya.core.exceptions import DecodeError
 from tinytuya.core.message_helper import MessagePayload, TuyaMessage, pack_message, unpack_message, parse_header
 from tinytuya.core import command_types as CT, header as H
-from tinytuya.core.XenonDevice import find_device, device_info
+from tinytuya.core.XenonDevice import device_info
 try:
     from tinytuya.core.core import merge_dps_results
 except ImportError:
@@ -28,16 +28,6 @@ except ImportError:
 log = logging.getLogger(__name__)
 
 # Async helper functions
-async def find_device_async(dev_id=None, address=None):
-    # Use asyncio.to_thread if available (Python 3.9+), otherwise use executor
-    # Call the actual sync implementation defined above, not the wrapper
-    if hasattr(asyncio, 'to_thread'):
-        return await asyncio.to_thread(find_device, dev_id, address)
-    else:
-        # Python 3.8 compatibility
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, find_device, dev_id, address)
-
 async def device_info_async(dev_id):
     # Use asyncio.to_thread if available (Python 3.9+), otherwise use executor
     # Call the actual sync implementation defined above, not the wrapper
