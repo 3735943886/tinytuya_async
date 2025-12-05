@@ -888,7 +888,7 @@ class DeviceAsync(object):
         log.debug("status() received data=%r", data)
         return data
 
-    async def cached_status(self, historic=False):
+    def cached_status(self, historic=False):
         """
         Return device last status if a persistent connection is open.
 

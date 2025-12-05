@@ -14,7 +14,6 @@ Setup:
     commands to the device.
 
 Author: 3735943886
-For more information, see https://github.com/jasonacox/tinytuya
 """
 import asyncio
 import tinytuya
