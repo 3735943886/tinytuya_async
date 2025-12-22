@@ -18,6 +18,7 @@ from tinytuya.core.exceptions import DecodeError
 from tinytuya.core.message_helper import MessagePayload, TuyaMessage, pack_message, unpack_message, parse_header
 from tinytuya.core import command_types as CT, header as H
 from tinytuya.core.XenonDevice import device_info
+from typing import Optional, Union, Dict, Any, List, Tuple
 try:
     from tinytuya.core.core import merge_dps_results
 except ImportError:
@@ -43,11 +44,22 @@ async def device_info_async(dev_id):
 
 class DeviceAsync(object):
     def __init__(
-            self, dev_id, address=None, local_key="", dev_type="default", connection_timeout=5,
-            version=3.5, persist=True, cid=None, node_id=None, parent=None,
-            connection_retry_limit=5, connection_retry_delay=5, port=TCPPORT,
-            max_simultaneous_dps=0
-    ):
+            self,
+            dev_id: str,
+            address: Optional[str] = None,
+            local_key: str = "",
+            dev_type: str = "default",
+            connection_timeout: int = 5,
+            version: float = 3.5,
+            persist: bool = True,
+            cid: Optional[str] = None,
+            node_id: Optional[str] = None,
+            parent: Optional[object] = None,
+            connection_retry_limit: int = 5,
+            connection_retry_delay: int = 5,
+            port: int = TCPPORT,
+            max_simultaneous_dps: int = 0,
+   ) -> None:
         """
         Represents a Tuya device.
 
@@ -126,40 +138,40 @@ class DeviceAsync(object):
             parent = self.parent.id
         else:
             parent = None
-        return ("%s( %r, address=%r, local_key=%r, dev_type=%r, connection_timeout=%r, version=%r, persist=%r, cid=%r, parent=%r, children=%r )" %
+        return ("%s(%r, address=%r, local_key=%r, dev_type=%r, connection_timeout=%r, version=%r, persist=%r, cid=%r, parent=%r, children=%r)" %
                 (self.__class__.__name__, self.id, self.address, self.real_local_key.decode(), self.dev_type, self.connection_timeout, self.version, self.socketPersistent, self.cid, parent, self.children))
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> "DeviceAsync":
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
         await self._close()
 
-    async def _load_child_cids( self ):
+    async def _load_child_cids(self) -> None:
         self._auto_cid_children = False
         for child in self.children:
             # if we are a child then we should have a cid/node_id but none were given - try and find it the same way we look up local keys
             if child.auto_cid and not child.cid:
-                devinfo = await device_info_async( child.id )
+                devinfo = await device_info_async(child.id)
                 if devinfo.get('node_id'):
                     child.cid = devinfo['node_id']
                     child.auto_cid = False
                 if not child.cid:
                     # not fatal as the user could have set the device_id to the cid
                     # in that case dev_type should be 'zigbee' to set the proper fields in requests
-                    log.debug( 'Child device but no cid/node_id given!' )
+                    log.debug('Child device but no cid/node_id given!')
 
-    async def _load_local_key( self ):
-        devinfo = await device_info_async( self.id )
+    async def _load_local_key(self) -> None:
+        devinfo = await device_info_async(self.id)
         if devinfo.get('key'):
             self.local_key = devinfo['key'].encode("latin1")
             self.real_local_key = self.local_key
 
-    async def _ensure_connection(self, renew=False):
+    async def _ensure_connection(self, renew: bool = False) -> int:
         async with self._conn_lock:
             return await self._ensure_connection_locked(renew=renew)
 
-    async def _ensure_connection_locked(self, renew=False):
+    async def _ensure_connection_locked(self, renew: bool = False) -> int:
         """
         error = self._ensure_socket_connection(renew=False)
 
@@ -183,7 +195,7 @@ class DeviceAsync(object):
 
             if self.auto_ip and not self.address:
                 from ..scanner_async import scanfor
-                bcast_data = await scanfor( self.id, timeout=True )
+                bcast_data = await scanfor(self.id, timeout=True)
                 if (not bcast_data) or (bcast_data['ip'] is None):
                     log.debug("Unable to find device on network (specify IP address)")
                     err = ERR_OFFLINE
@@ -232,10 +244,10 @@ class DeviceAsync(object):
                     err = 0
                     break
             except (asyncio.TimeoutError, socket.timeout):
-                log.debug(f"Connection timeout - retry {retries}/{self.socketRetryLimit}")
+                log.debug("Connection timeout - retry %s/%s", retries, self.socketRetryLimit)
                 err = ERR_OFFLINE
             except Exception as e:
-                log.debug(f"Connection failed (exception) - retry {retries}/{self.socketRetryLimit}", exc_info=True)
+                log.debug("Connection failed (exception) - retry %s/%s", retries, self.socketRetryLimit, exc_info=True)
                 err = ERR_CONNECT
 
             await self._close(err)
@@ -251,11 +263,11 @@ class DeviceAsync(object):
 
         return err
 
-    async def _check_socket_close(self):
+    async def _check_socket_close(self) -> None:
         if not self.socketPersistent:
             await self._schedule_close()
 
-    async def _recv_all(self, length, timeout=True):
+    async def _recv_all(self, length: int, timeout: Union[bool, float, None] = True) -> bytes:
         try:
             if timeout is None:
                 return await self.reader.readexactly(length)
@@ -264,16 +276,16 @@ class DeviceAsync(object):
             else:
                 return await asyncio.wait_for(self.reader.readexactly(length), timeout=timeout)
         except asyncio.IncompleteReadError as e:
-            log.debug(f"_recv_all(): no data?: {e}")
+            log.debug("_recv_all(): no data?: %s", e)
             raise DecodeError('No data received - connection closed')
 
-    async def _receive(self, timeout=True):
+    async def _receive(self, timeout: Union[bool, float, None] = True) -> TuyaMessage:
         # make sure to use the parent's self.seqno and session key
         if self.parent:
             return await self.parent._receive(timeout)
-        return await self._receive_locked( timeout )
+        return await self._receive_locked(timeout)
 
-    async def _receive_locked(self, timeout):
+    async def _receive_locked(self, timeout: Union[bool, float, None]) -> TuyaMessage:
         # message consists of header + retcode + [data] + crc (4 or 32) + footer
         min_len_55AA = struct.calcsize(H.MESSAGE_HEADER_FMT_55AA) + 4 + 4 + len(H.SUFFIX_BIN)
         # message consists of header + iv + retcode + [data] + crc (16) + footer
@@ -310,7 +322,7 @@ class DeviceAsync(object):
         no_retcode = False #None if self.version >= 3.5 else False
         return unpack_message(data, header=header, hmac_key=hmac_key, no_retcode=no_retcode)
 
-    async def _send_message( self, payload ):
+    async def _send_message(self, payload: Union[MessagePayload, bytes]) -> bytes:
         log.debug("sending payload: %r", payload)
         enc_payload = self._encode_message(payload) if isinstance(payload, MessagePayload) else payload
         self.writer.write(enc_payload)
@@ -322,7 +334,7 @@ class DeviceAsync(object):
         return enc_payload
 
     # similar to _send_receive() but never retries sending and does not decode the response
-    async def _send_receive_quick(self, payload, recv_retries, from_child=None, timeout=True):
+    async def _send_receive_quick(self, payload: Optional[Union[MessagePayload, bytes]], recv_retries: int, from_child: Optional["DeviceAsync"] = None, timeout: Union[bool, float, None] = True) -> Optional[Union[bool, TuyaMessage]]:
         if self.parent:
             return await self.parent._send_receive_quick(payload, recv_retries, from_child=self, timeout=timeout)
 
@@ -337,7 +349,7 @@ class DeviceAsync(object):
 
         if payload:
             try:
-                await self._send_message( payload )
+                await self._send_message(payload)
             except Exception:
                 await self._close(ERR_CONNECT)
                 return None
@@ -361,7 +373,7 @@ class DeviceAsync(object):
                 log.debug("received null payload (%r), fetch new one - %s retries remaining", msg, recv_retries)
         return False
 
-    async def _send_receive(self, payload, getresponse=True, decode_response=True, from_child=None, timeout=True, retry=True):
+    async def _send_receive(self, payload: Optional[bytes], getresponse: bool = True, decode_response: bool = True, from_child: Optional["DeviceAsync"] = None, timeout: Union[bool, float, None] = True, retry: bool = True) -> Dict[str, Any]:
         """
         Send single buffer `payload` and receive a single buffer.
 
@@ -389,16 +401,16 @@ class DeviceAsync(object):
         if getresponse and payload:
             async with self._send_lock:
                 async with self._recv_lock:
-                    result = await self._send_receive_locked( payload=payload, getresponse=getresponse, decode_response=decode_response, from_child=from_child, timeout=timeout, retry=retry )
+                    result = await self._send_receive_locked(payload=payload, getresponse=getresponse, decode_response=decode_response, from_child=from_child, timeout=timeout, retry=retry)
         elif getresponse:
             async with self._recv_lock:
-                result = await self._send_receive_locked( payload=payload, getresponse=getresponse, decode_response=decode_response, from_child=from_child, timeout=timeout, retry=retry )
+                result = await self._send_receive_locked(payload=payload, getresponse=getresponse, decode_response=decode_response, from_child=from_child, timeout=timeout, retry=retry)
         else:
             async with self._send_lock:
-                result = await self._send_receive_locked( payload=payload, getresponse=getresponse, decode_response=decode_response, from_child=from_child, timeout=timeout, retry=retry )
+                result = await self._send_receive_locked(payload=payload, getresponse=getresponse, decode_response=decode_response, from_child=from_child, timeout=timeout, retry=retry)
         return result
 
-    async def _send_receive_locked( self, payload=None, getresponse=True, decode_response=True, from_child=None, timeout=True, retry=True ):
+    async def _send_receive_locked(self, payload: Optional[bytes] = None, getresponse: bool = True, decode_response: bool = True, from_child: Optional["DeviceAsync"] = None, timeout: Union[bool, float, None] = True, retry: bool = True) -> Dict[str, Any]:
         success = False
         partial_success = False
         retries = 0
@@ -412,14 +424,14 @@ class DeviceAsync(object):
         while not success:
             # open up socket if device is available
             # close and re-open if we're sending and socket is not supposed to be persistent
-            sock_error = await self._ensure_connection( renew=(payload and (not self.socketPersistent)) )
+            sock_error = await self._ensure_connection(renew=(payload and (not self.socketPersistent)))
             if sock_error:
                 await self._close(sock_error)
                 return error_json(sock_error)
             # send request to device
             try:
                 if payload is not None and do_send:
-                    await self._send_message( payload )
+                    await self._send_message(payload)
                     if getresponse and self.sendWait is not None:
                         await asyncio.sleep(self.sendWait)
                 if getresponse:
@@ -457,7 +469,7 @@ class DeviceAsync(object):
                     return {}
                 do_send = True
                 retries += 1
-                log.debug(f"Timeout in _send_receive() - retry {retries}/{self.socketRetryLimit}")
+                log.debug("Timeout in _send_receive() - retry %s/%s", retries, self.socketRetryLimit)
                 # if we exceed the limit of retries then lets get out of here
                 if retries > self.socketRetryLimit:
                     await self._close(ERR_KEY_OR_VER)
@@ -484,13 +496,13 @@ class DeviceAsync(object):
                 retries += 1
                 # toss old socket and get new one
                 await self._close(ERR_CONNECT)
-                log.debug(f"Network connection error - retry {retries}/{self.socketRetryLimit}", exc_info=True)
+                log.debug("Network connection error - retry %s/%s", retries, self.socketRetryLimit, exc_info=True)
                 # if we exceed the limit of retries then lets get out of here
                 if retries > self.socketRetryLimit:
                     log.debug(
                         "Exceeded tinytuya retry limit (%s)",
                         self.socketRetryLimit
-                    )
+                   )
                     log.debug("Unable to connect to device ")
                     # timeout reached - return error
                     return error_json(ERR_CONNECT)
@@ -506,7 +518,7 @@ class DeviceAsync(object):
 
         return await self._process_message(msg, dev_type, from_child, decode_response, timeout, retry)
 
-    async def _process_message( self, msg, dev_type=None, from_child=None, decode_response=True, timeout=True, retry=True ):
+    async def _process_message(self, msg: TuyaMessage, dev_type: Optional[str] = None, from_child: Optional["DeviceAsync"] = None, decode_response: bool = True, timeout: Union[bool, float, None] = True, retry: bool = True) -> Dict[str, Any]:
         # null packet, nothing to decode
         if not msg or len(msg.payload) == 0:
             log.debug("raw unpacked message = %r", msg)
@@ -528,13 +540,13 @@ class DeviceAsync(object):
             log.debug("_decrypt_payload() failed!")
             result = error_json(ERR_PAYLOAD)
             #result['invalid_msg'] = msg
-        elif( (not self.disabledetect) and
+        elif((not self.disabledetect) and
             b"data unvalid" in payload and
             self.version == 3.3 and
             msg.retcode != 0 and
             msg.cmd in (CT.DP_QUERY, CT.DP_QUERY_NEW) and
             self.dev_type != "device22"
-           ):
+          ):
             dev_type = self.dev_type
             self.dev_type = "device22"
             # set at least one DPS
@@ -543,7 +555,7 @@ class DeviceAsync(object):
                 "'data unvalid' error detected: switching dev_type (%r -> %r) - Update payload and try again",
                 dev_type,
                 self.dev_type,
-            )
+           )
             result = error_json(ERR_DEVTYPE)
             #log.debug("status() rebuilding payload for device22")
             #payload = self._generate_payload(query_type)
@@ -575,7 +587,7 @@ class DeviceAsync(object):
 
             if from_child and from_child is not True and from_child != found_child:
                 # async update from different CID, try again
-                log.debug( 'Recieved async update for wrong CID %s while looking for CID %s, trying again', found_cid, from_child.cid )
+                log.debug('Recieved async update for wrong CID %s while looking for CID %s, trying again', found_cid, from_child.cid)
                 if self.socketPersistent:
                     # if persistent, save response until the next receive() call
                     # otherwise, trash it
@@ -585,9 +597,9 @@ class DeviceAsync(object):
                     else:
                         self._handle_response(result, msg)
                         result = self._process_response(result)
-                    self.received_wrong_cid_queue.append( (found_child, result) )
+                    self.received_wrong_cid_queue.append((found_child, result))
                 # events should not be coming in so fast that we will never timeout a read, so don't worry about loops
-                return await self._send_receive_locked( None, True, decode_response, from_child=from_child, timeout=timeout, retry=retry)
+                return await self._send_receive_locked(None, True, decode_response, from_child=from_child, timeout=timeout, retry=retry)
 
         # legacy/default mode avoids persisting socket across commands
         await self._check_socket_close()
@@ -621,7 +633,7 @@ class DeviceAsync(object):
             payload = cipher.decrypt(payload[16:], decode_text=False)
         elif self.version >= 3.2: # 3.2 or 3.3 or 3.4 or 3.5
             # Trim header for non-default device type
-            if payload.startswith( self.version_bytes ):
+            if payload.startswith(self.version_bytes):
                 payload = payload[len(self.version_header) :]
                 log.debug("removing 3.x=%r", payload)
             elif self.dev_type == "device22" and (len(payload) & 0x0F) != 0:
@@ -655,7 +667,7 @@ class DeviceAsync(object):
                     if (payload[:1] == b'{') and (payload[-1:] == b'}'):
                         try:
                             invalid_json = payload
-                            payload = payload.decode( errors='replace' )
+                            payload = payload.decode(errors='replace')
                         except:
                             pass
                 except:
@@ -683,7 +695,7 @@ class DeviceAsync(object):
 
         return json_payload
 
-    def _handle_response(self, response, raw_msg ):
+    def _handle_response(self, response, raw_msg):
         """
         Cache the last DP values and kick off the data callbacks
         """
@@ -705,26 +717,26 @@ class DeviceAsync(object):
         return response
 
     async def _negotiate_session_key(self):
-        rkey = await self._send_receive_quick( self._negotiate_session_key_generate_step_1(), 2 )
+        rkey = await self._send_receive_quick(self._negotiate_session_key_generate_step_1(), 2)
         if not rkey:
             log.debug('_negotiate_session_key: rkey is None!')
             return False
-        step3 = self._negotiate_session_key_generate_step_3( rkey )
+        step3 = self._negotiate_session_key_generate_step_3(rkey)
         if not step3:
             return False
-        if not await self._send_receive_quick( step3, None ):
+        if not await self._send_receive_quick(step3, None):
             return False
         self._negotiate_session_key_generate_finalize()
         return True
 
-    def _negotiate_session_key_generate_step_1( self ):
+    def _negotiate_session_key_generate_step_1(self):
         self.local_nonce = b'0123456789abcdef' # not-so-random random key
         self.remote_nonce = b''
         self.local_key = self.real_local_key
 
         return MessagePayload(CT.SESS_KEY_NEG_START, self.local_nonce)
 
-    def _negotiate_session_key_generate_step_3( self, rkey ):
+    def _negotiate_session_key_generate_step_3(self, rkey):
         if not rkey or type(rkey) != TuyaMessage or len(rkey.payload) < 48:
             # error
             log.debug("session key negotiation failed on step 1")
@@ -763,27 +775,27 @@ class DeviceAsync(object):
         rkey_hmac = hmac.new(self.local_key, self.remote_nonce, sha256).digest()
         return MessagePayload(CT.SESS_KEY_NEG_FINISH, rkey_hmac)
 
-    def _negotiate_session_key_generate_finalize( self ):
+    def _negotiate_session_key_generate_finalize(self):
         # Python 3: nonce XOR produces bytes object directly
         self.local_key = bytes(a ^ b for (a, b) in zip(self.local_nonce, self.remote_nonce))
         log.debug("Session nonce XOR'd: %r", self.local_key)
 
         cipher = AESCipher(self.real_local_key)
         if self.version == 3.4:
-            self.local_key = cipher.encrypt( self.local_key, False, pad=False )
+            self.local_key = cipher.encrypt(self.local_key, False, pad=False)
         else:
             iv = self.local_nonce[:12]
             log.debug("Session IV: %r", iv)
-            self.local_key = cipher.encrypt( self.local_key, use_base64=False, pad=False, iv=iv )[12:28]
+            self.local_key = cipher.encrypt(self.local_key, use_base64=False, pad=False, iv=iv)[12:28]
 
         log.debug("Session key negotiate success! session key: %r", self.local_key)
         return True
 
     # adds protocol header (if needed) and encrypts
-    def _encode_message( self, msg ):
+    def _encode_message(self, msg: MessagePayload) -> bytes:
         # make sure to use the parent's self.seqno and session key
         if self.parent:
-            return self.parent._encode_message( msg )
+            return self.parent._encode_message(msg)
         hmac_key = None
         iv = None
         payload = msg.payload
@@ -802,8 +814,8 @@ class DeviceAsync(object):
                 msg = TuyaMessage(self.seqno, msg.cmd, None, payload, 0, True, H.PREFIX_6699_VALUE, True)
                 self.seqno += 1  # increase message sequence number
                 data = pack_message(msg,hmac_key=self.local_key)
-                #log.debug("payload [%d] encrypted=%r",self.seqno, binascii.hexlify(data) )
-                log.debug("payload %r encrypted=%r", msg, binascii.hexlify(data) )
+                #log.debug("payload [%d] encrypted=%r",self.seqno, binascii.hexlify(data))
+                log.debug("payload %r encrypted=%r", msg, binascii.hexlify(data))
                 return data
 
             payload = self.cipher.encrypt(payload, False)
@@ -823,7 +835,7 @@ class DeviceAsync(object):
                 + H.PROTOCOL_VERSION_BYTES_31
                 + b"||"
                 + self.local_key
-            )
+           )
             m = md5()
             m.update(preMd5String)
             hexdigest = m.hexdigest()
@@ -832,7 +844,7 @@ class DeviceAsync(object):
                 H.PROTOCOL_VERSION_BYTES_31
                 + hexdigest[8:][:16].encode("latin1")
                 + payload
-            )
+           )
 
         self.cipher = None
         msg = TuyaMessage(self.seqno, msg.cmd, 0, payload, 0, True, H.PREFIX_55AA_VALUE, False)
@@ -841,7 +853,7 @@ class DeviceAsync(object):
         log.debug("payload %r encrypted=%r", msg, binascii.hexlify(buffer))
         return buffer
 
-    def _get_retcode(self, sent, msg):
+    def _get_retcode(self, sent: Optional[TuyaMessage], msg: Optional[TuyaMessage]) -> None:
         """Try to get the retcode for the last sent message"""
         if (not sent) or (not msg):
             return
@@ -853,7 +865,7 @@ class DeviceAsync(object):
                 return
         self.cmd_retcode = msg.retcode
 
-    def _register_child(self, child):
+    def _register_child(self, child: "DeviceAsync") -> None:
         if child.id in self.children and child != self.children[child.id]:
             log.debug('Replacing existing child %r!', child.id)
         self.children[child.id] = child
@@ -861,16 +873,16 @@ class DeviceAsync(object):
         self.disabledetect = True
         self.payload_dict = None
 
-    def is_connected(self):
+    def is_connected(self) -> bool:
         return self.connected.is_set()
 
-    async def receive(self, timeout=True):
+    async def receive(self, timeout: Union[bool, float, None] = True) -> Dict[str, Any]:
         """
         Poll device to read any payload in the buffer.  Timeout results in an empty dict {} returned.
         """
         return await self._send_receive(None, timeout=timeout)
 
-    async def _send(self, payload):
+    async def _send(self, payload: bytes) -> Dict[str, Any]:
         """
         Send single buffer `payload`.
 
@@ -879,7 +891,7 @@ class DeviceAsync(object):
         """
         return await self._send_receive(payload, getresponse=False)
 
-    async def status(self):
+    async def status(self) -> Dict[str, Any]:
         """Return device status."""
         query_type = CT.DP_QUERY
         log.debug("status() entry (dev_type is %s)", self.dev_type)
@@ -888,7 +900,7 @@ class DeviceAsync(object):
         log.debug("status() received data=%r", data)
         return data
 
-    def cached_status(self, historic=False):
+    def cached_status(self, historic: bool = False) -> Optional[Dict[str, Any]]:
         """
         Return device last status if a persistent connection is open.
 
@@ -904,17 +916,17 @@ class DeviceAsync(object):
             return None
         return self._last_status
 
-    def cache_clear(self):
+    def cache_clear(self) -> None:
         self._last_status = {}
         self._have_status = False
 
-    async def subdev_query(self):
+    async def subdev_query(self) -> Dict[str, Any]:
         """Query for a list of sub-devices and their status"""
         # final payload should look like: {"data":{"cids":[]},"reqType":"subdev_online_stat_query"}
         payload = self._generate_payload(CT.LAN_EXT_STREAM, rawData={"cids":[]}, reqType='subdev_online_stat_query')
         return await self._send_receive(payload, getresponse=False)
 
-    async def detect_available_dps(self):
+    async def detect_available_dps(self) -> Dict[str, Any]:
         """Return which datapoints are supported by the device."""
         # device22 devices need a sort of bruteforce querying in order to detect the
         # list of available dps experience shows that the dps available are usually
@@ -944,17 +956,17 @@ class DeviceAsync(object):
         self.dps_to_request = self.dps_cache
         return self.dps_cache
 
-    def add_dps_to_request(self, dp_indicies):
+    def add_dps_to_request(self, dp_indicies: Union[int, List[int]]) -> None:
         """Add a datapoint (DP) to be included in requests."""
         if isinstance(dp_indicies, int):
             self.dps_to_request[str(dp_indicies)] = None
         else:
             self.dps_to_request.update({str(index): None for index in dp_indicies})
 
-    def set_version(self, version):
+    def set_version(self, version: float) -> None:
         return self._set_version(version)
 
-    def _set_version(self, version):
+    def _set_version(self, version: float) -> None:
         version = float(version)
         self.version = version
         self.version_str = "v" + str(version)
@@ -967,12 +979,12 @@ class DeviceAsync(object):
                 loop = asyncio.get_running_loop()
                 asyncio.run_coroutine_threadsafe(self.detect_available_dps(), loop)
 
-    def set_socketPersistent(self, persist):
+    def set_socketPersistent(self, persist: bool) -> None:
         self.socketPersistent = persist
         if not persist:
             self._close()
 
-    def set_socketNODELAY(self, nodelay):
+    def set_socketNODELAY(self, nodelay: bool) -> None:
         self.socketNODELAY = nodelay
         sock = self.writer.get_extra_info('socket')
         if sock:
@@ -981,39 +993,39 @@ class DeviceAsync(object):
             else:
                 sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 0)
 
-    def set_socketRetryLimit(self, limit):
+    def set_socketRetryLimit(self, limit: int) -> None:
         self.socketRetryLimit = limit
 
-    def set_socketRetryDelay(self, delay):
+    def set_socketRetryDelay(self, delay: int) -> None:
         self.socketRetryDelay = delay
 
-    def set_socketTimeout(self, s):
+    def set_socketTimeout(self, s: int) -> None:
         self.connection_timeout = s
 
-    def set_dpsUsed(self, dps_to_request):
+    def set_dpsUsed(self, dps_to_request: Dict[str, Any]) -> None:
         self.dps_to_request = dps_to_request
 
-    def set_retry(self, retry):
+    def set_retry(self, retry: bool) -> None:
         self.retry = retry
 
-    def set_sendWait(self, s):
+    def set_sendWait(self, s: float) -> None:
         self.sendWait = s
 
-    async def open(self):
+    async def open(self) -> int:
         result = await self._ensure_connection()
         return result
 
-    async def close(self, reason=None):
+    async def close(self, reason: Optional[int] = None) -> None:
         await self._close()
 
-    async def _close(self, reason=None):
+    async def _close(self, reason: Optional[int] = None) -> None:
         self.connected.clear()
         if self.writer:
             try:
                 self.writer.close()
                 await self.writer.wait_closed()
             except Exception as e:
-                log.debug(f"Error closing writer: {e}")
+                log.debug("Error closing writer: %s", e)
         self.writer = None
         self.reader = None
         self.cache_clear()
@@ -1023,15 +1035,15 @@ class DeviceAsync(object):
             await self._close_task
             self._close_task = None
 
-    async def _schedule_close(self):
+    async def _schedule_close(self) -> None:
         if self._close_task:
             self._close_task.cancel()
             await self._close_task
             self._close_task = None
         log.debug('closing socket in 100ms')
-        self._close_task = asyncio.create_task( self._run_close() )
+        self._close_task = asyncio.create_task(self._run_close())
 
-    async def _run_close(self):
+    async def _run_close(self) -> None:
         try:
             await asyncio.sleep(0.1)
         except asyncio.CancelledError:
@@ -1041,7 +1053,7 @@ class DeviceAsync(object):
             return
         await self._close()
 
-    def _generate_payload(self, command, data=None, gwId=None, devId=None, uid=None, rawData=None, reqType=None):
+    def _generate_payload(self, command: Any, data: Optional[Dict[str, Any]] = None, gwId: Optional[str] = None, devId: Optional[str] = None, uid: Optional[str] = None, rawData: Optional[Dict[str, Any]] = None, reqType: Optional[str] = None) -> MessagePayload:
         """
         Generate the payload to send.
 
@@ -1058,8 +1070,8 @@ class DeviceAsync(object):
         def _deepcopy(dict1):
             result = {}
             for k in dict1:
-                if isinstance( dict1[k], dict ):
-                    result[k] = _deepcopy( dict1[k] )
+                if isinstance(dict1[k], dict):
+                    result[k] = _deepcopy(dict1[k])
                 else:
                     result[k] = dict1[k]
             return result
@@ -1071,15 +1083,15 @@ class DeviceAsync(object):
             for cmd in dict2:
                 if cmd not in dict1:
                     # make a deep copy so we don't get a reference
-                    dict1[cmd] = _deepcopy( dict2[cmd] )
+                    dict1[cmd] = _deepcopy(dict2[cmd])
                 else:
                     for var in dict2[cmd]:
-                        if not isinstance( dict2[cmd][var], dict ):
+                        if not isinstance(dict2[cmd][var], dict):
                             # not a dict, safe to copy
                             dict1[cmd][var] = dict2[cmd][var]
                         else:
                             # make a deep copy so we don't get a reference
-                            dict1[cmd][var] = _deepcopy( dict2[cmd][var] )
+                            dict1[cmd][var] = _deepcopy(dict2[cmd][var])
 
         # start merging down to the final payload dict
         # later merges overwrite earlier merges
@@ -1087,20 +1099,20 @@ class DeviceAsync(object):
         #   'zigbee_'+[version string] if sub-device - [dev_type if not "default"]
         if not self.payload_dict or self.last_dev_type != self.dev_type:
             self.payload_dict = {}
-            _merge_payload_dicts( self.payload_dict, CT.payload_dict['default'] )
+            _merge_payload_dicts(self.payload_dict, CT.payload_dict['default'])
             if self.children:
-                _merge_payload_dicts( self.payload_dict, CT.payload_dict['gateway'] )
+                _merge_payload_dicts(self.payload_dict, CT.payload_dict['gateway'])
             if self.cid:
-                _merge_payload_dicts( self.payload_dict, CT.payload_dict['zigbee'] )
+                _merge_payload_dicts(self.payload_dict, CT.payload_dict['zigbee'])
             if self.version_str in CT.payload_dict:
-                _merge_payload_dicts( self.payload_dict, CT.payload_dict[self.version_str] )
+                _merge_payload_dicts(self.payload_dict, CT.payload_dict[self.version_str])
             if self.children and ('gateway_'+self.version_str) in CT.payload_dict:
-                _merge_payload_dicts( self.payload_dict, CT.payload_dict['gateway_'+self.version_str] )
+                _merge_payload_dicts(self.payload_dict, CT.payload_dict['gateway_'+self.version_str])
             if self.cid and ('zigbee_'+self.version_str) in CT.payload_dict:
-                _merge_payload_dicts( self.payload_dict, CT.payload_dict['zigbee_'+self.version_str] )
+                _merge_payload_dicts(self.payload_dict, CT.payload_dict['zigbee_'+self.version_str])
             if self.dev_type != 'default':
-                _merge_payload_dicts( self.payload_dict, CT.payload_dict[self.dev_type] )
-            log.debug( 'final payload_dict for %r (%r/%r): %r', self.id, self.version_str, self.dev_type, self.payload_dict )
+                _merge_payload_dicts(self.payload_dict, CT.payload_dict[self.dev_type])
+            log.debug('final payload_dict for %r (%r/%r): %r', self.id, self.version_str, self.dev_type, self.payload_dict)
             # save it so we don't have to calculate this again unless something changes
             self.last_dev_type = self.dev_type
 
@@ -1186,7 +1198,7 @@ class DeviceAsync(object):
     #
     # The following methods are taken from the v1 Device class and modified to be async-compatible.
     #
-    async def set_status(self, on, switch=1):
+    async def set_status(self, on: bool, switch: int = 1) -> Dict[str, Any]:
         """
         Set status of the device to 'on' or 'off'.
 
@@ -1204,7 +1216,7 @@ class DeviceAsync(object):
 
         return data
 
-    async def product(self):
+    async def product(self) -> Dict[str, Any]:
         """
         Request AP_CONFIG Product Info from device. [BETA]
 
@@ -1215,7 +1227,7 @@ class DeviceAsync(object):
         log.debug("product received data=%r", data)
         return data
 
-    async def heartbeat(self):
+    async def heartbeat(self) -> Dict[str, Any]:
         """
         Send a keep-alive HEART_BEAT command to keep the TCP connection open.
 
@@ -1229,7 +1241,7 @@ class DeviceAsync(object):
         log.debug("heartbeat received data=%r", data)
         return data
 
-    async def updatedps(self, index=None):
+    async def updatedps(self, index: Optional[List[int]] = None) -> Dict[str, Any]:
         """
         Request device to update index.
 
@@ -1246,7 +1258,7 @@ class DeviceAsync(object):
         log.debug("updatedps received data=%r", data)
         return data
 
-    async def set_value(self, index, value):
+    async def set_value(self, index: int, value: int) -> Dict[str, Any]:
         """
         Set int value of any index.
 
@@ -1264,7 +1276,7 @@ class DeviceAsync(object):
 
         return data
 
-    async def set_multiple_values(self, data):
+    async def set_multiple_values(self, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """
         Set multiple indexes at the same time
 
@@ -1308,7 +1320,7 @@ class DeviceAsync(object):
 
         if result and 'Err' in result and len(out) > 1:
             # sending failed! device might only be able to handle 1 DP at a time
-            first_dp = next(iter( out ))
+            first_dp = next(iter(out))
             res = await self.set_value(first_dp, out[first_dp])
             del out[first_dp]
             if res and 'Err' not in res:
@@ -1320,15 +1332,15 @@ class DeviceAsync(object):
                     merge_dps_results(result, res)
         return result
 
-    async def turn_on(self, switch=1):
+    async def turn_on(self, switch: int = 1) -> Dict[str, Any]:
         """Turn the device on"""
         return await self.set_status(True, switch)
 
-    async def turn_off(self, switch=1):
+    async def turn_off(self, switch: int = 1) -> Dict[str, Any]:
         """Turn the device off"""
         return await self.set_status(False, switch)
 
-    async def set_timer(self, num_secs, dps_id=0):
+    async def set_timer(self, num_secs: int, dps_id: int = 0) -> Dict[str, Any]:
         """
         Set a timer.
 
