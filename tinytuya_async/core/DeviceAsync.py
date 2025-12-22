@@ -18,6 +18,7 @@ from tinytuya.core.exceptions import DecodeError
 from tinytuya.core.message_helper import MessagePayload, TuyaMessage, pack_message, unpack_message, parse_header
 from tinytuya.core import command_types as CT, header as H
 from tinytuya.core.XenonDevice import device_info
+from typing import Optional
 try:
     from tinytuya.core.core import merge_dps_results
 except ImportError:
@@ -43,11 +44,22 @@ async def device_info_async(dev_id):
 
 class DeviceAsync(object):
     def __init__(
-            self, dev_id, address=None, local_key="", dev_type="default", connection_timeout=5,
-            version=3.5, persist=True, cid=None, node_id=None, parent=None,
-            connection_retry_limit=5, connection_retry_delay=5, port=TCPPORT,
-            max_simultaneous_dps=0
-    ):
+            self,
+            dev_id: str,
+            address: Optional[str] = None,
+            local_key: str = "",
+            dev_type: str = "default",
+            connection_timeout: int = 5,
+            version: float = 3.5,
+            persist: bool = True,
+            cid: Optional[str] = None,
+            node_id: Optional[str] = None,
+            parent: Optional[object] = None,
+            connection_retry_limit: int = 5,
+            connection_retry_delay: int = 5,
+            port: int = TCPPORT,
+            max_simultaneous_dps: int = 0,
+    ) -> None:
         """
         Represents a Tuya device.
 
