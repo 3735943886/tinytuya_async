@@ -24,3 +24,8 @@ Install the library using pip:
 ```bash
 pip install tinytuya-async
 ```
+
+### Usage Example
+
+A complete example demonstrating asynchronous connection and status monitoring is located at **[examples/monitor_async.py](examples/monitor_async.py)**.
+
