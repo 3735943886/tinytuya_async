@@ -8,16 +8,19 @@ Therefore, **`tinytuya_async`** is a **minimal change** library that focuses onl
 
 -----
 
-### 📥 Installation
+### Project Status & Maintenance Notice
+
+> ⚠️ **Important Notice:** This repository is a **temporary stopgap** created solely to provide basic async functionality until the official `tinytuya 2.0` release is available. 
+>
+> * **Not Actively Maintained:** This project is not actively maintained, and there are no plans to add new features or provide ongoing support.
+> * **Provided AS-IS:** The code is provided strictly "as-is." If you encounter bugs or require additional Tuya protocol features, we highly encourage you to contribute via Pull Requests or look forward to the upcoming official `tinytuya` v2.0.
+
+-----
+
+### Installation
 
 Install the library using pip:
 
 ```bash
 pip install tinytuya-async
 ```
-
-### 💡 Usage Example
-
-A complete example demonstrating asynchronous connection and status monitoring is located at **[examples/monitor_async.py](examples/monitor_async.py)**.
-
------
